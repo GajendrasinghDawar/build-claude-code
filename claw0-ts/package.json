@@ -1,0 +1,32 @@
+{
+    "name": "claw0-ts",
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+        "s01": "tsx src/s01_agent_loop.ts",
+        "s02": "tsx src/s02_tool_use.ts",
+        "s03": "tsx src/s03_sessions.ts",
+        "s04": "tsx src/s04_channels.ts",
+        "s05": "tsx src/s05_gateway_routing.ts",
+        "s06": "tsx src/s06_intelligence.ts",
+        "s07": "tsx src/s07_heartbeat_cron.ts",
+        "s08": "tsx src/s08_delivery.ts",
+        "s09": "tsx src/s09_resilience.ts",
+        "s10": "tsx src/s10_concurrency.ts",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "ai": "^6.0.116",
+        "@ai-sdk/gateway": "^3.0.66",
+        "dotenv": "^16.6.1",
+        "zod": "^3.24.2",
+        "ws": "^8.19.0",
+        "cron-parser": "^5.5.0"
+    },
+    "devDependencies": {
+        "tsx": "^4.21.0",
+        "typescript": "^5.9.3",
+        "@types/node": "^22.19.15",
+        "@types/ws": "^8.18.1"
+    }
+}
