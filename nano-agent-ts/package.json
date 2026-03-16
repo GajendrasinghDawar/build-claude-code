@@ -15,12 +15,15 @@
         "s10": "tsx src/s10_team_protocols.ts",
         "s11": "tsx src/s11_autonomous_agents.ts",
         "s12": "tsx src/s12_worktree_task_isolation.ts",
+        "s_full": "tsx src/s_full.ts",
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
-        "@ai-sdk/anthropic": "^1.2.12",
+        "@ai-sdk/anthropic": "^3.0.58",
+        "@ai-sdk/gateway": "^3.0.66",
+        "@ai-sdk/google": "^3.0.43",
         "@libsql/client": "^0.15.15",
-        "ai": "^4.3.16",
+        "ai": "^6.0.116",
         "dotenv": "^16.6.1",
         "ink": "^5.1.0",
         "react": "^18.3.1",

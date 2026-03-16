@@ -1,5 +1,5 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { generateText, tool, type CoreMessage } from "ai";
+import { generateText, tool, type ModelMessage, stepCountIs } from "ai";
 import * as readline from "node:readline";
 import { z } from "zod";
 import { runBash, WORKDIR } from "./tools/base.js";
@@ -9,16 +9,16 @@ const MODEL = process.env.MODEL_ID ?? "claude-sonnet-4-6";
 
 const SYSTEM = `You are a coding agent at ${WORKDIR}. Use bash to solve tasks. Act, do not over-explain.`;
 
-async function agentLoop(messages: CoreMessage[]): Promise<string> {
+async function agentLoop(messages: ModelMessage[]): Promise<string> {
   const result = await generateText({
     model: anthropic(MODEL),
     system: SYSTEM,
     messages,
-    maxSteps: 50,
+    stopWhen: stepCountIs(50),
     tools: {
       bash: tool({
         description: "Run a shell command.",
-        parameters: z.object({ command: z.string() }),
+        inputSchema: z.object({ command: z.string() }),
         execute: async ({ command }) => {
           console.log(`\x1b[33m$ ${command}\x1b[0m`);
           const output = await runBash(command);
@@ -34,7 +34,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
 }
 
 async function main(): Promise<void> {
-  const history: CoreMessage[] = [];
+  const history: ModelMessage[] = [];
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,

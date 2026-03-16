@@ -1,5 +1,5 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { generateText, type CoreMessage } from "ai";
+import { generateText, type ModelMessage, stepCountIs } from "ai";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { WORKDIR } from "../tools/base.js";
@@ -7,11 +7,11 @@ import { WORKDIR } from "../tools/base.js";
 const TRANSCRIPT_DIR = join(WORKDIR, ".transcripts");
 const DEFAULT_SUMMARY_LIMIT = 80_000;
 
-export function estimateTokens(messages: CoreMessage[]): number {
+export function estimateTokens(messages: ModelMessage[]): number {
   return JSON.stringify(messages).length / 4;
 }
 
-export function microCompact(messages: CoreMessage[], keepRecent = 3): void {
+export function microCompact(messages: ModelMessage[], keepRecent = 3): void {
   const toolMessageIndexes = messages
     .map((msg, index) => ({ msg, index }))
     .filter(({ msg }) => msg.role === "tool")
@@ -23,7 +23,7 @@ export function microCompact(messages: CoreMessage[], keepRecent = 3): void {
 
   const staleIndexes = toolMessageIndexes.slice(0, -keepRecent);
   for (const idx of staleIndexes) {
-    const msg = messages[idx] as CoreMessage & { content?: unknown };
+    const msg = messages[idx] as ModelMessage & { content?: unknown };
     if (typeof msg.content === "string" && msg.content.length > 100) {
       msg.content = "[Previous: used tool]";
       continue;
@@ -35,7 +35,7 @@ export function microCompact(messages: CoreMessage[], keepRecent = 3): void {
   }
 }
 
-function createTranscript(messages: CoreMessage[]): string {
+function createTranscript(messages: ModelMessage[]): string {
   mkdirSync(TRANSCRIPT_DIR, { recursive: true });
   const transcriptPath = join(TRANSCRIPT_DIR, `transcript_${Date.now()}.jsonl`);
   const lines = messages.map((msg) => JSON.stringify(msg)).join("\n");
@@ -44,16 +44,16 @@ function createTranscript(messages: CoreMessage[]): string {
 }
 
 export async function autoCompact(
-  messages: CoreMessage[],
+  messages: ModelMessage[],
   modelId: string,
   summaryCharacterLimit = DEFAULT_SUMMARY_LIMIT,
-): Promise<CoreMessage[]> {
+): Promise<ModelMessage[]> {
   const transcriptPath = createTranscript(messages);
   const convText = JSON.stringify(messages).slice(0, summaryCharacterLimit);
 
   const summaryResult = await generateText({
     model: anthropic(modelId),
-    maxSteps: 1,
+    stopWhen: stepCountIs(1),
     messages: [
       {
         role: "user",

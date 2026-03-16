@@ -1,5 +1,5 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { generateText, tool, type CoreMessage } from "ai";
+import { generateText, tool, type ModelMessage, stepCountIs } from "ai";
 import { join } from "node:path";
 import * as readline from "node:readline";
 import { SkillLoader } from "./managers/skills.js";
@@ -16,21 +16,21 @@ Use load_skill before solving unfamiliar domains.
 Skills available:
 ${SKILL_LOADER.getDescriptions()}`;
 
-async function agentLoop(messages: CoreMessage[]): Promise<string> {
+async function agentLoop(messages: ModelMessage[]): Promise<string> {
   const result = await generateText({
     model: anthropic(MODEL),
     system: SYSTEM,
     messages,
-    maxSteps: 50,
+    stopWhen: stepCountIs(50),
     tools: {
       bash: tool({
         description: "Run a shell command.",
-        parameters: z.object({ command: z.string() }),
+        inputSchema: z.object({ command: z.string() }),
         execute: async ({ command }) => runBash(command),
       }),
       read_file: tool({
         description: "Read file contents.",
-        parameters: z.object({
+        inputSchema: z.object({
           path: z.string(),
           limit: z.number().int().positive().optional(),
         }),
@@ -38,12 +38,12 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
       }),
       write_file: tool({
         description: "Write content to file.",
-        parameters: z.object({ path: z.string(), content: z.string() }),
+        inputSchema: z.object({ path: z.string(), content: z.string() }),
         execute: async ({ path, content }) => runWrite(path, content),
       }),
       edit_file: tool({
         description: "Replace exact text in file.",
-        parameters: z.object({
+        inputSchema: z.object({
           path: z.string(),
           old_text: z.string(),
           new_text: z.string(),
@@ -53,7 +53,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
       }),
       load_skill: tool({
         description: "Load full content of a specific skill.",
-        parameters: z.object({ name: z.string() }),
+        inputSchema: z.object({ name: z.string() }),
         execute: async ({ name }) => SKILL_LOADER.getContent(name),
       }),
     },
@@ -64,7 +64,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
 }
 
 async function main(): Promise<void> {
-  const history: CoreMessage[] = [];
+  const history: ModelMessage[] = [];
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,

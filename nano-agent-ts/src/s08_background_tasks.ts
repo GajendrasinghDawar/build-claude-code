@@ -1,5 +1,5 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { generateText, tool, type CoreMessage } from "ai";
+import { generateText, tool, type ModelMessage, stepCountIs } from "ai";
 import * as readline from "node:readline";
 import { z } from "zod";
 import { BackgroundManager } from "./managers/background.js";
@@ -13,7 +13,7 @@ const SYSTEM = `You are a coding agent at ${WORKDIR}.
 Use background_run for long operations and continue working while they execute.
 Before making decisions, consider any drained background results.`;
 
-function injectBackgroundNotifications(messages: CoreMessage[]): void {
+function injectBackgroundNotifications(messages: ModelMessage[]): void {
   const notifications = BG.drainNotifications();
   if (!notifications.length) {
     return;
@@ -29,7 +29,7 @@ function injectBackgroundNotifications(messages: CoreMessage[]): void {
   });
 }
 
-async function agentLoop(messages: CoreMessage[]): Promise<string> {
+async function agentLoop(messages: ModelMessage[]): Promise<string> {
   while (true) {
     injectBackgroundNotifications(messages);
 
@@ -37,16 +37,16 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
       model: anthropic(MODEL),
       system: SYSTEM,
       messages,
-      maxSteps: 50,
+      stopWhen: stepCountIs(50),
       tools: {
         bash: tool({
           description: "Run a shell command.",
-          parameters: z.object({ command: z.string() }),
+          inputSchema: z.object({ command: z.string() }),
           execute: async ({ command }) => runBash(command),
         }),
         read_file: tool({
           description: "Read file contents.",
-          parameters: z.object({
+          inputSchema: z.object({
             path: z.string(),
             limit: z.number().int().positive().optional(),
           }),
@@ -54,12 +54,12 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         write_file: tool({
           description: "Write content to file.",
-          parameters: z.object({ path: z.string(), content: z.string() }),
+          inputSchema: z.object({ path: z.string(), content: z.string() }),
           execute: async ({ path, content }) => runWrite(path, content),
         }),
         edit_file: tool({
           description: "Replace exact text in file.",
-          parameters: z.object({
+          inputSchema: z.object({
             path: z.string(),
             old_text: z.string(),
             new_text: z.string(),
@@ -69,12 +69,12 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         background_run: tool({
           description: "Run a command asynchronously in background.",
-          parameters: z.object({ command: z.string() }),
+          inputSchema: z.object({ command: z.string() }),
           execute: async ({ command }) => BG.run(command),
         }),
         check_background: tool({
           description: "Check one background task or all current tasks.",
-          parameters: z.object({ task_id: z.string().optional() }),
+          inputSchema: z.object({ task_id: z.string().optional() }),
           execute: async ({ task_id }) => BG.check(task_id),
         }),
       },
@@ -89,7 +89,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
 }
 
 async function main(): Promise<void> {
-  const history: CoreMessage[] = [];
+  const history: ModelMessage[] = [];
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,

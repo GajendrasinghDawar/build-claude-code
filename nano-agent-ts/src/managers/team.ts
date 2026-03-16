@@ -1,5 +1,5 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { generateText, tool, type CoreMessage } from "ai";
+import { generateText, tool, type ModelMessage, stepCountIs } from "ai";
 import {
   appendFileSync,
   existsSync,
@@ -368,12 +368,12 @@ export class TeammateManager {
     return {
       bash: tool({
         description: "Run a shell command.",
-        parameters: z.object({ command: z.string() }),
+        inputSchema: z.object({ command: z.string() }),
         execute: async ({ command }) => runBash(command),
       }),
       read_file: tool({
         description: "Read file contents.",
-        parameters: z.object({
+        inputSchema: z.object({
           path: z.string(),
           limit: z.number().int().positive().optional(),
         }),
@@ -381,12 +381,12 @@ export class TeammateManager {
       }),
       write_file: tool({
         description: "Write content to file.",
-        parameters: z.object({ path: z.string(), content: z.string() }),
+        inputSchema: z.object({ path: z.string(), content: z.string() }),
         execute: async ({ path, content }) => runWrite(path, content),
       }),
       edit_file: tool({
         description: "Replace exact text in file.",
-        parameters: z.object({
+        inputSchema: z.object({
           path: z.string(),
           old_text: z.string(),
           new_text: z.string(),
@@ -396,7 +396,7 @@ export class TeammateManager {
       }),
       send_message: tool({
         description: "Send a direct message to a teammate.",
-        parameters: z.object({
+        inputSchema: z.object({
           to: z.string(),
           content: z.string(),
           msg_type: z
@@ -414,13 +414,13 @@ export class TeammateManager {
       }),
       read_inbox: tool({
         description: "Read all messages in your inbox.",
-        parameters: z.object({}),
+        inputSchema: z.object({}),
         execute: async () =>
           JSON.stringify(await this.bus.readInbox(name), null, 2),
       }),
       broadcast: tool({
         description: "Broadcast message to teammates.",
-        parameters: z.object({ content: z.string() }),
+        inputSchema: z.object({ content: z.string() }),
         execute: async ({ content }) =>
           this.bus.broadcast(name, content, this.memberNames()),
       }),
@@ -436,7 +436,7 @@ export class TeammateManager {
     const system = `You are '${name}', role: ${role}, working in ${WORKDIR}.
 Use send_message/read_inbox/broadcast to collaborate with teammates.`;
 
-    const messages: CoreMessage[] = [{ role: "user", content: prompt }];
+    const messages: ModelMessage[] = [{ role: "user", content: prompt }];
     let shutdownRequested = false;
 
     for (let turn = 0; turn < 30; turn += 1) {
@@ -465,7 +465,7 @@ Use send_message/read_inbox/broadcast to collaborate with teammates.`;
         model: anthropic(this.modelId),
         system,
         messages,
-        maxSteps: 20,
+        stopWhen: stepCountIs(20),
         tools: this.teammateTools(name),
       });
 
@@ -494,7 +494,7 @@ Use send_message/read_inbox/broadcast to collaborate with teammates.`;
   private async autonomousIdlePhase(
     name: string,
     role: string,
-    messages: CoreMessage[],
+    messages: ModelMessage[],
     taskBoard: AutonomousTaskBoard,
   ): Promise<boolean> {
     const pollIntervalMs = 5_000;

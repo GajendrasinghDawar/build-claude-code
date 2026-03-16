@@ -1,5 +1,5 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { generateText, tool, type CoreMessage } from "ai";
+import { generateText, tool, type ModelMessage, stepCountIs } from "ai";
 import { join } from "node:path";
 import * as readline from "node:readline";
 import { z } from "zod";
@@ -20,7 +20,7 @@ const SYSTEM = `You are the lead autonomous coordinator at ${WORKDIR}.
 Spawn autonomous teammates who can idle, watch inboxes, and auto-claim pending tasks.
 Keep the task board updated and monitor teammate status.`;
 
-async function injectLeadInbox(messages: CoreMessage[]): Promise<void> {
+async function injectLeadInbox(messages: ModelMessage[]): Promise<void> {
   const inbox = await BUS.readInbox("lead");
   if (!inbox.length) {
     return;
@@ -32,7 +32,7 @@ async function injectLeadInbox(messages: CoreMessage[]): Promise<void> {
   });
 }
 
-async function agentLoop(messages: CoreMessage[]): Promise<string> {
+async function agentLoop(messages: ModelMessage[]): Promise<string> {
   while (true) {
     await injectLeadInbox(messages);
 
@@ -40,16 +40,16 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
       model: anthropic(MODEL),
       system: SYSTEM,
       messages,
-      maxSteps: 50,
+      stopWhen: stepCountIs(50),
       tools: {
         bash: tool({
           description: "Run a shell command.",
-          parameters: z.object({ command: z.string() }),
+          inputSchema: z.object({ command: z.string() }),
           execute: async ({ command }) => runBash(command),
         }),
         read_file: tool({
           description: "Read file contents.",
-          parameters: z.object({
+          inputSchema: z.object({
             path: z.string(),
             limit: z.number().int().positive().optional(),
           }),
@@ -57,12 +57,12 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         write_file: tool({
           description: "Write content to file.",
-          parameters: z.object({ path: z.string(), content: z.string() }),
+          inputSchema: z.object({ path: z.string(), content: z.string() }),
           execute: async ({ path, content }) => runWrite(path, content),
         }),
         edit_file: tool({
           description: "Replace exact text in file.",
-          parameters: z.object({
+          inputSchema: z.object({
             path: z.string(),
             old_text: z.string(),
             new_text: z.string(),
@@ -72,7 +72,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         task_create: tool({
           description: "Create a task item on the board.",
-          parameters: z.object({
+          inputSchema: z.object({
             subject: z.string(),
             description: z.string().optional(),
           }),
@@ -81,17 +81,17 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         task_get: tool({
           description: "Get one task by ID.",
-          parameters: z.object({ task_id: z.number().int().positive() }),
+          inputSchema: z.object({ task_id: z.number().int().positive() }),
           execute: async ({ task_id }) => TASKS.get(task_id),
         }),
         task_list: tool({
           description: "List all tasks and dependencies.",
-          parameters: z.object({}),
+          inputSchema: z.object({}),
           execute: async () => TASKS.listAll(),
         }),
         task_update: tool({
           description: "Update task status and dependencies.",
-          parameters: z.object({
+          inputSchema: z.object({
             task_id: z.number().int().positive(),
             status: z.enum(["pending", "in_progress", "completed"]).optional(),
             addBlockedBy: z.array(z.number().int().positive()).optional(),
@@ -102,7 +102,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         claim_task: tool({
           description: "Manually claim one task for an owner.",
-          parameters: z.object({
+          inputSchema: z.object({
             task_id: z.number().int().positive(),
             owner: z.string(),
           }),
@@ -111,7 +111,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         spawn_teammate: tool({
           description: "Spawn a standard teammate.",
-          parameters: z.object({
+          inputSchema: z.object({
             name: z.string(),
             role: z.string(),
             prompt: z.string(),
@@ -122,7 +122,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         spawn_autonomous: tool({
           description:
             "Spawn an autonomous teammate with idle auto-claim behavior.",
-          parameters: z.object({
+          inputSchema: z.object({
             name: z.string(),
             role: z.string(),
             prompt: z.string(),
@@ -132,12 +132,12 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         list_teammates: tool({
           description: "List teammate names, roles, statuses.",
-          parameters: z.object({}),
+          inputSchema: z.object({}),
           execute: async () => TEAM.listAll(),
         }),
         send_message: tool({
           description: "Send direct message as lead.",
-          parameters: z.object({
+          inputSchema: z.object({
             to: z.string(),
             content: z.string(),
             msg_type: z
@@ -155,13 +155,13 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         read_inbox: tool({
           description: "Read lead inbox.",
-          parameters: z.object({}),
+          inputSchema: z.object({}),
           execute: async () =>
             JSON.stringify(await BUS.readInbox("lead"), null, 2),
         }),
         broadcast: tool({
           description: "Broadcast to all teammates.",
-          parameters: z.object({ content: z.string() }),
+          inputSchema: z.object({ content: z.string() }),
           execute: async ({ content }) =>
             BUS.broadcast("lead", content, TEAM.memberNames()),
         }),
@@ -181,7 +181,7 @@ async function main(): Promise<void> {
   const teamStatus = await TEAM.init();
   console.log(`[s11] ${taskStatus} ${teamStatus}`);
 
-  const history: CoreMessage[] = [];
+  const history: ModelMessage[] = [];
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,

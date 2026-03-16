@@ -1,5 +1,5 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { generateText, tool, type CoreMessage } from "ai";
+import { generateText, tool, type ModelMessage, stepCountIs } from "ai";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import * as readline from "node:readline";
@@ -23,7 +23,7 @@ Enforce team communication protocols:
 - Use plan_approval to approve/reject proposed plans.
 - Track request IDs and statuses carefully.`;
 
-async function processProtocolMessages(messages: CoreMessage[]): Promise<void> {
+async function processProtocolMessages(messages: ModelMessage[]): Promise<void> {
   const inbox = await BUS.readInbox("lead");
   if (!inbox.length) {
     return;
@@ -110,7 +110,7 @@ async function reviewPlan(
   return `Plan ${req.status} for '${req.from}'`;
 }
 
-async function agentLoop(messages: CoreMessage[]): Promise<string> {
+async function agentLoop(messages: ModelMessage[]): Promise<string> {
   while (true) {
     await processProtocolMessages(messages);
 
@@ -118,16 +118,16 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
       model: anthropic(MODEL),
       system: SYSTEM,
       messages,
-      maxSteps: 50,
+      stopWhen: stepCountIs(50),
       tools: {
         bash: tool({
           description: "Run a shell command.",
-          parameters: z.object({ command: z.string() }),
+          inputSchema: z.object({ command: z.string() }),
           execute: async ({ command }) => runBash(command),
         }),
         read_file: tool({
           description: "Read file contents.",
-          parameters: z.object({
+          inputSchema: z.object({
             path: z.string(),
             limit: z.number().int().positive().optional(),
           }),
@@ -135,12 +135,12 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         write_file: tool({
           description: "Write content to file.",
-          parameters: z.object({ path: z.string(), content: z.string() }),
+          inputSchema: z.object({ path: z.string(), content: z.string() }),
           execute: async ({ path, content }) => runWrite(path, content),
         }),
         edit_file: tool({
           description: "Replace exact text in file.",
-          parameters: z.object({
+          inputSchema: z.object({
             path: z.string(),
             old_text: z.string(),
             new_text: z.string(),
@@ -150,7 +150,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         spawn_teammate: tool({
           description: "Spawn or resume a named teammate worker.",
-          parameters: z.object({
+          inputSchema: z.object({
             name: z.string(),
             role: z.string(),
             prompt: z.string(),
@@ -160,12 +160,12 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         list_teammates: tool({
           description: "List teammate names, roles, and statuses.",
-          parameters: z.object({}),
+          inputSchema: z.object({}),
           execute: async () => TEAM.listAll(),
         }),
         send_message: tool({
           description: "Send a direct message as lead.",
-          parameters: z.object({
+          inputSchema: z.object({
             to: z.string(),
             content: z.string(),
             msg_type: z
@@ -200,18 +200,18 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         read_inbox: tool({
           description: "Read lead inbox messages.",
-          parameters: z.object({}),
+          inputSchema: z.object({}),
           execute: async () => JSON.stringify(await BUS.readInbox("lead"), null, 2),
         }),
         broadcast: tool({
           description: "Broadcast to all teammates.",
-          parameters: z.object({ content: z.string() }),
+          inputSchema: z.object({ content: z.string() }),
           execute: async ({ content }) =>
             BUS.broadcast("lead", content, TEAM.memberNames()),
         }),
         shutdown_request: tool({
           description: "Initiate graceful shutdown protocol for one teammate.",
-          parameters: z.object({
+          inputSchema: z.object({
             target: z.string(),
             reason: z.string().optional(),
           }),
@@ -219,7 +219,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         plan_approval: tool({
           description: "Approve or reject a pending plan request.",
-          parameters: z.object({
+          inputSchema: z.object({
             request_id: z.string(),
             approve: z.boolean(),
             feedback: z.string().optional(),
@@ -229,7 +229,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         protocol_status: tool({
           description: "View current protocol request states.",
-          parameters: z.object({}),
+          inputSchema: z.object({}),
           execute: async () => renderProtocolState(),
         }),
       },
@@ -247,7 +247,7 @@ async function main(): Promise<void> {
   const initStatus = await TEAM.init();
   console.log(`[s10] ${initStatus}`);
 
-  const history: CoreMessage[] = [];
+  const history: ModelMessage[] = [];
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,

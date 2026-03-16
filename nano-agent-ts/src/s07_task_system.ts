@@ -1,5 +1,5 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { generateText, tool, type CoreMessage } from "ai";
+import { generateText, tool, type ModelMessage, stepCountIs } from "ai";
 import { join } from "node:path";
 import * as readline from "node:readline";
 import { z } from "zod";
@@ -15,22 +15,22 @@ const SYSTEM = `You are a coding agent at ${WORKDIR}.
 Break larger goals into explicit tasks with task_create and track progress with task_update.
 Always consult task_list before/after significant milestones.`;
 
-async function agentLoop(messages: CoreMessage[]): Promise<string> {
+async function agentLoop(messages: ModelMessage[]): Promise<string> {
   while (true) {
     const result = await generateText({
       model: anthropic(MODEL),
       system: SYSTEM,
       messages,
-      maxSteps: 50,
+      stopWhen: stepCountIs(50),
       tools: {
         bash: tool({
           description: "Run a shell command.",
-          parameters: z.object({ command: z.string() }),
+          inputSchema: z.object({ command: z.string() }),
           execute: async ({ command }) => runBash(command),
         }),
         read_file: tool({
           description: "Read file contents.",
-          parameters: z.object({
+          inputSchema: z.object({
             path: z.string(),
             limit: z.number().int().positive().optional(),
           }),
@@ -38,12 +38,12 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         write_file: tool({
           description: "Write content to file.",
-          parameters: z.object({ path: z.string(), content: z.string() }),
+          inputSchema: z.object({ path: z.string(), content: z.string() }),
           execute: async ({ path, content }) => runWrite(path, content),
         }),
         edit_file: tool({
           description: "Replace exact text in file.",
-          parameters: z.object({
+          inputSchema: z.object({
             path: z.string(),
             old_text: z.string(),
             new_text: z.string(),
@@ -53,7 +53,7 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         task_create: tool({
           description: "Create a task item on the task board.",
-          parameters: z.object({
+          inputSchema: z.object({
             subject: z.string(),
             description: z.string().optional(),
           }),
@@ -62,17 +62,17 @@ async function agentLoop(messages: CoreMessage[]): Promise<string> {
         }),
         task_get: tool({
           description: "Get one task by ID.",
-          parameters: z.object({ task_id: z.number().int().positive() }),
+          inputSchema: z.object({ task_id: z.number().int().positive() }),
           execute: async ({ task_id }) => TASKS.get(task_id),
         }),
         task_list: tool({
           description: "List all tasks and dependency status.",
-          parameters: z.object({}),
+          inputSchema: z.object({}),
           execute: async () => TASKS.listAll(),
         }),
         task_update: tool({
           description: "Update task status and dependencies.",
-          parameters: z.object({
+          inputSchema: z.object({
             task_id: z.number().int().positive(),
             status: z.enum(["pending", "in_progress", "completed"]).optional(),
             addBlockedBy: z.array(z.number().int().positive()).optional(),
@@ -101,7 +101,7 @@ async function main(): Promise<void> {
   const initStatus = await TASKS.init();
   console.log(`[s07] ${initStatus}`);
 
-  const history: CoreMessage[] = [];
+  const history: ModelMessage[] = [];
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
