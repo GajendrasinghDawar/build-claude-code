@@ -1,61 +1,54 @@
-import { anthropic } from "@ai-sdk/anthropic";
-import { generateText, tool, type ModelMessage, stepCountIs } from "ai";
+import Anthropic from "@anthropic-ai/sdk";
 import * as readline from "node:readline";
-import { z } from "zod";
-import { runBash, runEdit, runRead, runWrite, WORKDIR } from "./tools/base.js";
 import "dotenv/config";
+import { runAgentLoop } from "./core/agent-loop.js";
+import { TOOLS } from "./core/tool-dispatch.js";
 
-const MODEL = process.env.MODEL_ID ?? "claude-sonnet-4-6";
+const MODEL_ID = process.env.MODEL_ID ?? "claude-sonnet-4-20250514";
+const SYSTEM_PROMPT = [
+  "You are a helpful AI assistant with access to tools.",
+  "Use tools for shell and file operations when needed.",
+  "Always read a file before editing it.",
+  "When using edit_file, old_string must match exactly.",
+].join("\n");
 
-const SYSTEM = `You are a coding agent at ${WORKDIR}. Use tools to solve tasks directly.`;
+const CYAN = "\u001b[36m";
+const GREEN = "\u001b[32m";
+const DIM = "\u001b[2m";
+const RESET = "\u001b[0m";
+const BOLD = "\u001b[1m";
 
-async function agentLoop(messages: ModelMessage[]): Promise<string> {
-  const result = await generateText({
-    model: anthropic(MODEL),
-    system: SYSTEM,
-    messages,
-    stopWhen: stepCountIs(50),
-    tools: {
-      bash: tool({
-        description: "Run a shell command.",
-        inputSchema: z.object({ command: z.string() }),
-        execute: async ({ command }) => runBash(command),
-      }),
-      read_file: tool({
-        description: "Read file contents.",
-        inputSchema: z.object({
-          path: z.string(),
-          limit: z.number().int().positive().optional(),
-        }),
-        execute: async ({ path, limit }) => runRead(path, limit),
-      }),
-      write_file: tool({
-        description: "Write content to file.",
-        inputSchema: z.object({
-          path: z.string(),
-          content: z.string(),
-        }),
-        execute: async ({ path, content }) => runWrite(path, content),
-      }),
-      edit_file: tool({
-        description: "Replace exact text in file.",
-        inputSchema: z.object({
-          path: z.string(),
-          old_text: z.string(),
-          new_text: z.string(),
-        }),
-        execute: async ({ path, old_text, new_text }) =>
-          runEdit(path, old_text, new_text),
-      }),
-    },
-  });
+function printAssistant(text: string): void {
+  console.log(`\n${GREEN}${BOLD}Assistant:${RESET} ${text}\n`);
+}
 
-  messages.push(...result.response.messages);
-  return result.text.trim();
+function printInfo(text: string): void {
+  console.log(`${DIM}${text}${RESET}`);
 }
 
 async function main(): Promise<void> {
-  const history: ModelMessage[] = [];
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error(
+      "Error: ANTHROPIC_API_KEY not set. Copy .env.example to .env.",
+    );
+    process.exit(1);
+  }
+
+  const client = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    baseURL: process.env.ANTHROPIC_BASE_URL || undefined,
+  });
+
+  const messages: Anthropic.MessageParam[] = [];
+
+  printInfo("=".repeat(60));
+  printInfo("  claw0  |  Section 02: Tool Use");
+  printInfo(`  Model: ${MODEL_ID}`);
+  printInfo(`  Tools: ${TOOLS.map((t) => t.name).join(", ")}`);
+  printInfo("  Type 'quit' or 'exit' to leave.");
+  printInfo("=".repeat(60));
+  console.log();
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -65,21 +58,38 @@ async function main(): Promise<void> {
     new Promise((resolve) => rl.question(prompt, resolve));
 
   while (true) {
-    const query = await ask("\x1b[36ms02 >> \x1b[0m");
-    const normalized = query.trim().toLowerCase();
-    if (!query.trim() || normalized === "q" || normalized === "exit") {
-      break;
-    }
+    const query = (await ask(`${CYAN}${BOLD}You > ${RESET}`)).trim();
+    if (!query) continue;
+    if (["quit", "exit"].includes(query.toLowerCase())) break;
 
-    history.push({ role: "user", content: query });
-    const finalText = await agentLoop(history);
-    if (finalText) {
-      console.log(finalText);
+    messages.push({ role: "user", content: query });
+
+    try {
+      const result = await runAgentLoop({
+        client,
+        modelId: MODEL_ID,
+        systemPrompt: SYSTEM_PROMPT,
+        messages,
+        tools: TOOLS,
+      });
+
+      if (result.text) printAssistant(result.text);
+      else printInfo(`[stop_reason=${result.stopReason}]`);
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      console.log(`\nAPI Error: ${err.message ?? "unknown"}\n`);
+      while (
+        messages.length &&
+        messages[messages.length - 1]?.role !== "user"
+      ) {
+        messages.pop();
+      }
+      if (messages.length) messages.pop();
     }
-    console.log();
   }
 
   rl.close();
+  printInfo("Goodbye.");
 }
 
 main().catch((error) => {

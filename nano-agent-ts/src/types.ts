@@ -138,3 +138,136 @@ export interface PlanRequest {
   plan: string;
   status: "pending" | "approved" | "rejected";
 }
+
+// Claw0 (gufan) gateway types
+export interface InboundMessage {
+  text: string;
+  senderId: string;
+  channel: string;
+  accountId: string;
+  peerId: string;
+  isGroup: boolean;
+  media: unknown[];
+  raw: Record<string, unknown>;
+}
+
+export interface ChannelAccount {
+  channel: string;
+  accountId: string;
+  token: string;
+  config: Record<string, unknown>;
+}
+
+export interface SessionRecord {
+  type: "user" | "assistant" | "tool_use" | "tool_result";
+  content: unknown;
+  ts: number;
+  tool_use_id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+}
+
+export interface SessionIndex {
+  [sessionId: string]: {
+    label: string;
+    created_at: string;
+    last_active: string;
+    message_count: number;
+  };
+}
+
+export type BindingTier = "peer" | "guild" | "account" | "channel" | "default";
+
+export interface Binding {
+  tier: BindingTier;
+  channel: string;
+  accountId: string;
+  peerId: string;
+  agentId: string;
+  createdAt: string;
+}
+
+export interface SkillMeta {
+  name: string;
+  description: string;
+  invocation: string;
+  body: string;
+  path: string;
+}
+
+export interface MemoryEntry {
+  id: string;
+  content: string;
+  tags: string[];
+  timestamp: number;
+  source: string;
+}
+
+export type CronScheduleKind = "cron" | "at" | "every";
+
+export interface CronJob {
+  id: string;
+  name: string;
+  enabled: boolean;
+  schedule: {
+    kind: CronScheduleKind;
+    expr?: string;
+    tz?: string;
+    at?: string;
+    every_seconds?: number;
+    anchor?: string;
+  };
+  payload: {
+    kind: "agent_turn" | "system_event";
+    message?: string;
+    text?: string;
+  };
+  delete_after_run: boolean;
+}
+
+export interface CronConfig {
+  jobs: CronJob[];
+}
+
+export interface DeliveryItem {
+  id: string;
+  channel: string;
+  to: string;
+  text: string;
+  retries: number;
+  nextRetryAt: number;
+  createdAt: number;
+  status: "pending" | "failed";
+}
+
+export type FailoverReason =
+  | "rate_limit"
+  | "auth"
+  | "timeout"
+  | "billing"
+  | "overflow"
+  | "unknown";
+
+export interface AuthProfile {
+  name: string;
+  provider: string;
+  apiKey: string;
+  baseUrl?: string;
+  cooldownUntil: number;
+  failureReason: string | null;
+  lastGoodAt: number;
+}
+
+export interface LaneConfig {
+  name: string;
+  maxConcurrency: number;
+}
+
+export interface QueuedTask<T = unknown> {
+  id: string;
+  lane: string;
+  fn: () => Promise<T>;
+  resolve: (value: T) => void;
+  reject: (err: unknown) => void;
+  generation: number;
+}
